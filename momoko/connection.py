@@ -12,6 +12,7 @@ MIT, see LICENSE for more details.
 from __future__ import print_function
 
 import sys
+
 if sys.version_info[0] >= 3:
     basestring = str
 
@@ -39,6 +40,7 @@ class ConnectionContainer(object):
     """
     Helper class that stores connections according to their state
     """
+
     def __init__(self):
         self.empty()
 
@@ -242,7 +244,7 @@ class Pool(object):
         self.connection_factory = connection_factory
         self.cursor_factory = cursor_factory
         self.raise_connect_errors = raise_connect_errors
-        self.reconnect_interval = float(reconnect_interval)/1000  # the parameter is in milliseconds
+        self.reconnect_interval = float(reconnect_interval) / 1000  # the parameter is in milliseconds
         self.setsession = setsession
 
         self.connected = False
@@ -273,7 +275,7 @@ class Pool(object):
         is true, raises :py:meth:`momoko.PartiallyConnectedError`.
         """
         future = Future()
-        pending = [self.size-1]
+        pending = [self.size - 1]
 
         def on_connect(fut):
             if pending[0]:
@@ -414,7 +416,7 @@ class Pool(object):
         See :py:meth:`momoko.Connection.mogrify` for documentation about the
         parameters.
         """
-        return self._operate(Connection.mogrify, args, kwargs, async=False)
+        return self._operate(Connection.mogrify, args, kwargs, asyncronous=False)
 
     def register_hstore(self, *args, **kwargs):
         """
@@ -451,7 +453,7 @@ class Pool(object):
         self.conns.empty()
         self.closed = True
 
-    def _operate(self, method, args=(), kwargs=None, async=True, keep=False, connection=None):
+    def _operate(self, method, args=(), kwargs=None, asyncronous=True, keep=False, connection=None):
         kwargs = kwargs or {}
         future = Future()
 
@@ -473,7 +475,7 @@ class Pool(object):
                 log.debug("Method failed synchronously")
                 return self._retry(retry, when_available, conn, keep, future)
 
-            if not async:
+            if not asyncronous:
                 future.set_result(future_or_result)
                 if not keep:
                     self.putconn(conn)
@@ -524,7 +526,7 @@ class Pool(object):
             future.set_result(None)
             return future
 
-        pending = [len(self.conns.dead)-1]
+        pending = [len(self.conns.dead) - 1]
 
         def on_connect(fut):
             if pending[0]:
@@ -649,6 +651,7 @@ class Connection(object):
     .. _psycopg2.extensions.connection: http://initd.org/psycopg/docs/connection.html#connection
     .. _Connection and cursor factories: http://initd.org/psycopg/docs/advanced.html#subclassing-cursor
     """
+
     def __init__(self,
                  dsn,
                  connection_factory=None,
@@ -667,7 +670,7 @@ class Connection(object):
         Initiate asynchronous connect.
         Returns future that resolves to this connection object.
         """
-        kwargs = {"async": True}
+        kwargs = {"async_": True}
         if self.connection_factory:
             kwargs["connection_factory"] = self.connection_factory
         if self.cursor_factory:
@@ -911,6 +914,7 @@ class Connection(object):
             except Exception as rb_error:
                 log.warn("Failed to ROLLBACK transaction %s", rb_error)
             transaction_future.set_exception(error)
+
         self.ioloop.add_future(self.execute("ROLLBACK;"), rollback_callback)
 
     def _register(self, future, registrator, fut):

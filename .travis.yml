@@ -32,6 +32,12 @@ install: "pip install 'tornado>=4.0.0,<5.0.0' ${MOMOKO_PSYCOPG2_IMPL} unittest2"
 script: python setup.py test
 
 matrix:
+  include:
+    - python: 3.7
+      dist: xenial
+      sudo: true
   exclude:
+    - python: 2.6
+      env: MOMOKO_PSYCOPG2_IMPL=psycopg2cffi
     - python: pypy
       env: MOMOKO_PSYCOPG2_IMPL=psycopg2
