@@ -12,7 +12,6 @@ MIT, see LICENSE for more details.
 from __future__ import print_function
 
 import sys
-
 if sys.version_info[0] >= 3:
     basestring = str
 
@@ -28,10 +27,19 @@ from psycopg2.extras import register_hstore as _psy_register_hstore
 from psycopg2.extras import register_json as _psy_register_json
 from psycopg2.extensions import POLL_OK, POLL_READ, POLL_WRITE
 
+import tornado
 from tornado.ioloop import IOLoop
 from tornado.concurrent import chain_future, Future
 
 from .exceptions import PoolError, PartiallyConnectedError
+
+# Backfill for tornado 5 compatability
+# https://www.tornadoweb.org/en/stable/concurrent.html#tornado.concurrent.future_set_exc_info
+if tornado.version_info[0] < 5:
+    def future_set_exc_info(future, exc_info):
+        future.set_exc_info(exc_info)
+else:
+    from tornado.concurrent import future_set_exc_info
 
 log = logging.getLogger('momoko')
 
@@ -40,7 +48,6 @@ class ConnectionContainer(object):
     """
     Helper class that stores connections according to their state
     """
-
     def __init__(self):
         self.empty()
 
@@ -244,7 +251,7 @@ class Pool(object):
         self.connection_factory = connection_factory
         self.cursor_factory = cursor_factory
         self.raise_connect_errors = raise_connect_errors
-        self.reconnect_interval = float(reconnect_interval) / 1000  # the parameter is in milliseconds
+        self.reconnect_interval = float(reconnect_interval)/1000  # the parameter is in milliseconds
         self.setsession = setsession
 
         self.connected = False
@@ -275,7 +282,7 @@ class Pool(object):
         is true, raises :py:meth:`momoko.PartiallyConnectedError`.
         """
         future = Future()
-        pending = [self.size - 1]
+        pending = [self.size-1]
 
         def on_connect(fut):
             if pending[0]:
@@ -416,7 +423,7 @@ class Pool(object):
         See :py:meth:`momoko.Connection.mogrify` for documentation about the
         parameters.
         """
-        return self._operate(Connection.mogrify, args, kwargs, asyncronous=False)
+        return self._operate(Connection.mogrify, args, kwargs, async_=False)
 
     def register_hstore(self, *args, **kwargs):
         """
@@ -453,7 +460,7 @@ class Pool(object):
         self.conns.empty()
         self.closed = True
 
-    def _operate(self, method, args=(), kwargs=None, asyncronous=True, keep=False, connection=None):
+    def _operate(self, method, args=(), kwargs=None, async_=True, keep=False, connection=None):
         kwargs = kwargs or {}
         future = Future()
 
@@ -463,7 +470,7 @@ class Pool(object):
             try:
                 conn = fut.result()
             except psycopg2.Error:
-                future.set_exc_info(sys.exc_info())
+                future_set_exc_info(future, sys.exc_info())
                 if retry and not keep:
                     self.putconn(retry[0])
                 return
@@ -475,7 +482,7 @@ class Pool(object):
                 log.debug("Method failed synchronously")
                 return self._retry(retry, when_available, conn, keep, future)
 
-            if not asyncronous:
+            if not async_:
                 future.set_result(future_or_result)
                 if not keep:
                     self.putconn(conn)
@@ -511,7 +518,7 @@ class Pool(object):
             else:
                 future.set_exception(self._no_conn_available_error)
         else:
-            future.set_exc_info(sys.exc_info())
+            future_set_exc_info(future, sys.exc_info())
         if not keep:
             self.putconn(conn)
         return
@@ -526,7 +533,7 @@ class Pool(object):
             future.set_result(None)
             return future
 
-        pending = [len(self.conns.dead) - 1]
+        pending = [len(self.conns.dead)-1]
 
         def on_connect(fut):
             if pending[0]:
@@ -601,7 +608,7 @@ class Pool(object):
                     if conn.closed:
                         ping_future.set_exception(self._no_conn_available_error)
                     else:
-                        ping_future.set_exc_info(sys.exc_info())
+                        future_set_exc_info(ping_future, sys.exc_info())
                     self.putconn(conn)
                 else:
                     ping_future.set_result(conn)
@@ -651,7 +658,6 @@ class Connection(object):
     .. _psycopg2.extensions.connection: http://initd.org/psycopg/docs/connection.html#connection
     .. _Connection and cursor factories: http://initd.org/psycopg/docs/advanced.html#subclassing-cursor
     """
-
     def __init__(self,
                  dsn,
                  connection_factory=None,
@@ -683,7 +689,7 @@ class Connection(object):
             self.connection = psycopg2.connect(self.dsn, **kwargs)
         except psycopg2.Error:
             self.connection = None
-            future.set_exc_info(sys.exc_info())
+            future_set_exc_info(future, sys.exc_info())
             return future
 
         self.fileno = self.connection.fileno()
@@ -719,9 +725,9 @@ class Connection(object):
     def _io_callback(self, future, result, fd=None, events=None):
         try:
             state = self.connection.poll()
-        except (psycopg2.Warning, psycopg2.Error):
+        except (psycopg2.Warning, psycopg2.Error) as err:
             self.ioloop.remove_handler(self.fileno)
-            future.set_exc_info(sys.exc_info())
+            future_set_exc_info(future, sys.exc_info())
         else:
             try:
                 if state == POLL_OK:
@@ -884,7 +890,7 @@ class Connection(object):
                 if auto_rollback and not self.closed:
                     self._rollback(transaction_future, error)
                 else:
-                    transaction_future.set_exc_info(sys.exc_info())
+                    future_set_exc_info(transaction_future, sys.exc_info())
                 return
 
             try:
@@ -914,14 +920,13 @@ class Connection(object):
             except Exception as rb_error:
                 log.warn("Failed to ROLLBACK transaction %s", rb_error)
             transaction_future.set_exception(error)
-
         self.ioloop.add_future(self.execute("ROLLBACK;"), rollback_callback)
 
     def _register(self, future, registrator, fut):
         try:
             cursor = fut.result()
         except Exception:
-            future.set_exc_info(sys.exc_info())
+            future_set_exc_info(future, sys.exc_info())
             return
 
         oid, array_oid = cursor.fetchone()
